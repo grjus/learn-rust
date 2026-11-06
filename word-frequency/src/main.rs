@@ -1,11 +1,47 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::io;
+
+const FILE_EXTENSION: &str = "md";
 
 struct Document {
     name: String,
     word_counts: HashMap<String, usize>,
     word_count: usize,
+}
+
+fn load_document(path: &str) -> Result<Document, io::Error> {
+    let contents = fs::read_to_string(path)?;
+    let word_counts = count_words(&contents);
+    let word_count: usize = word_counts.values().sum();
+
+    Ok(Document {
+        name: path.to_string(),
+        word_counts,
+        word_count,
+    })
+}
+
+fn load_documents(directory_path: &str, file_extension: &str) -> Result<Vec<Document>, io::Error> {
+    let mut documents = Vec::new();
+
+    for entry in fs::read_dir(directory_path)? {
+        let path = entry?.path();
+
+        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some(file_extension)
+        {
+            continue;
+        }
+
+        let path = path.to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "File path is not valid UTF-8")
+        })?;
+
+        documents.push(load_document(path)?);
+    }
+
+    Ok(documents)
 }
 
 fn count_words(contents: &str) -> HashMap<String, usize> {
@@ -25,42 +61,43 @@ fn count_words(contents: &str) -> HashMap<String, usize> {
 }
 
 fn main() {
-    println!("Enter the path of the file: ");
-    let mut path = String::new();
+    let mut args = env::args().skip(1);
+    let directory_path = match (args.next(), args.next(), args.next()) {
+        (Some(flag), Some(path), None) if flag == "--document-directory" => path,
+        _ => {
+            eprintln!("Usage: word-frequency --document-directory <path>");
+            return;
+        }
+    };
+    println!("Document directory: {directory_path}");
+
+    println!("Enter the search query: ");
+    let mut query = String::new();
 
     io::stdin()
-        .read_line(&mut path)
-        .expect("Failed to read input");
+        .read_line(&mut query)
+        .expect("Failed to read query");
 
-    let path = path.trim();
-    println!("Selected file {path}");
-    let contents = match fs::read_to_string(path) {
-        Ok(text) => text,
+    let query_words = count_words(&query);
+
+    let documents = match load_documents(&directory_path, FILE_EXTENSION) {
+        Ok(documents) => documents,
         Err(error) => {
-            eprintln!("Could not load {path},{error}");
+            eprintln!("Could not load documents: {error}");
             return;
         }
     };
 
-    let counts = count_words(&contents);
-    let word_count = counts.values().sum::<usize>();
-    let document = Document {
-        name: path.to_string(),
-        word_counts: counts,
-        word_count,
-    };
+    println!("Document count: {}", documents.len());
 
-    let mut words: Vec<_> = document.word_counts.iter().collect();
-    words.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-
-    println!("Document: {}", document.name);
-    println!("Total words: {}", document.word_count);
-
-    println!("{:<20} {:>8}", "Word", "Count");
-    println!("{}", "-".repeat(29));
-
-    for (word, count) in words.iter().take(10) {
-        println!("{word:<20} {count:>8}")
+    for document in documents {
+        let matches = query_words
+            .keys()
+            .filter(|word| document.word_counts.contains_key(*word))
+            .count();
+        if matches > 0 {
+            println!("{}: {matches} matching query words", document.name)
+        }
     }
 }
 
