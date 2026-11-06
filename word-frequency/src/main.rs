@@ -88,7 +88,24 @@ fn main() {
         }
     };
 
+    for word in query_words.keys() {
+        let document_frequency = documents
+            .iter()
+            .filter(|document| document.word_counts.contains_key(word))
+            .count();
+        println!("{word}: found in {document_frequency} documents")
+    }
+
+    if documents.is_empty() {
+        println!("No {FILE_EXTENSION} document found. Exiting....");
+        return;
+    }
+
     println!("Document count: {}", documents.len());
+
+    let total_words: usize = documents.iter().map(|document| document.word_count).sum();
+    let average_length = total_words as f64 / documents.len() as f64;
+    println!("Average document length: {average_length:.2}");
 
     for document in documents {
         let matches = query_words
@@ -96,7 +113,7 @@ fn main() {
             .filter(|word| document.word_counts.contains_key(*word))
             .count();
         if matches > 0 {
-            println!("{}: {matches} matching query words", document.name)
+            println!("{}: {matches} matching query words", document.name);
         }
     }
 }
