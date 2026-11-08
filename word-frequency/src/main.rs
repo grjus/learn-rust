@@ -69,7 +69,6 @@ fn main() {
             return;
         }
     };
-    println!("Document directory: {directory_path}");
 
     println!("Enter the search query: ");
     let mut query = String::new();
@@ -80,6 +79,11 @@ fn main() {
 
     let query_words = count_words(&query);
 
+    if query_words.is_empty() {
+        println!("Please enter a query containing at least one word...");
+        return;
+    }
+
     let documents = match load_documents(&directory_path, FILE_EXTENSION) {
         Ok(documents) => documents,
         Err(error) => {
@@ -87,14 +91,6 @@ fn main() {
             return;
         }
     };
-
-    for word in query_words.keys() {
-        let document_frequency = documents
-            .iter()
-            .filter(|document| document.word_counts.contains_key(word))
-            .count();
-        println!("{word}: found in {document_frequency} documents")
-    }
 
     if documents.is_empty() {
         println!("No {FILE_EXTENSION} document found. Exiting....");
@@ -106,16 +102,62 @@ fn main() {
     let total_words: usize = documents.iter().map(|document| document.word_count).sum();
     let average_length = total_words as f64 / documents.len() as f64;
     println!("Average document length: {average_length:.2}");
-
-    for document in documents {
-        let matches = query_words
-            .keys()
-            .filter(|word| document.word_counts.contains_key(*word))
-            .count();
-        if matches > 0 {
-            println!("{}: {matches} matching query words", document.name);
+    let mut results = Vec::new();
+    for document in &documents {
+        let score = bm25_score(document, &documents, &query_words, average_length);
+        if score > 0.0 {
+            results.push((document, score));
         }
+        results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
     }
+    if results.is_empty() {
+        println!("No matching documents found.");
+        return;
+    }
+    for (document, score) in results {
+        println!("{},{score:.3}", document.name)
+    }
+}
+
+fn document_frequency(documents: &[Document], word: &str) -> usize {
+    documents
+        .iter()
+        .filter(|document| document.word_counts.contains_key(word))
+        .count()
+}
+
+fn inverse_document_frequency(documents: &[Document], word: &str) -> f64 {
+    let total = documents.len() as f64;
+    let frequency = document_frequency(documents, word) as f64;
+    (1.0 + (total - frequency + 0.5) / (frequency + 0.5)).ln()
+}
+
+fn bm25_score(
+    document: &Document,
+    documents: &[Document],
+    query_words: &HashMap<String, usize>,
+    average_length: f64,
+) -> f64 {
+    let k1 = 1.2;
+    let b = 0.75;
+    let mut score = 0.0;
+
+    for word in query_words.keys() {
+        let frequency = document.word_counts.get(word).copied().unwrap_or(0) as f64;
+        if frequency == 0.0 {
+            continue;
+        }
+
+        let idf = inverse_document_frequency(documents, word);
+        let length_ratio = document.word_count as f64 / average_length;
+
+        let numerator = frequency * (k1 + 1.0);
+        let denominator = frequency + k1 * (1.0 - b + b * length_ratio);
+
+        score += idf * numerator / denominator;
+    }
+
+    score
 }
 
 #[cfg(test)]
