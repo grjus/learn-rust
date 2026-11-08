@@ -162,7 +162,7 @@ fn bm25_score(
 
 #[cfg(test)]
 mod tests {
-    use crate::count_words;
+    use crate::{Document, bm25_score, count_words};
 
     #[test]
     fn count_words_and_ignores_case_and_punctuations() {
@@ -174,5 +174,48 @@ mod tests {
     #[test]
     fn empty_input_has_no_words() {
         assert!(count_words("").is_empty())
+    }
+
+    #[test]
+    fn matching_document_scores_above_nonmatching_document() {
+        let documents = vec![
+            Document {
+                name: "matching".to_string(),
+                word_counts: count_words("rust code"),
+                word_count: 2,
+            },
+            Document {
+                name: "other".to_string(),
+                word_counts: count_words("python code"),
+                word_count: 2,
+            },
+        ];
+        let query = count_words("rust");
+        let matching = bm25_score(&documents[0], &documents, &query, 2.0);
+        let other = bm25_score(&documents[1], &documents, &query, 2.0);
+        assert!(matching > other);
+        assert_eq!(other, 0.0);
+    }
+
+    #[test]
+    fn shorter_document_scores_higher_for_equal_word_frequency() {
+        let documents = vec![
+            Document {
+                name: "short".to_string(),
+                word_counts: count_words("rust"),
+                word_count: 1,
+            },
+            Document {
+                name: "long".to_string(),
+                word_counts: count_words("rust code code code code"),
+                word_count: 5,
+            },
+        ];
+
+        let query = count_words("rust");
+        let short = bm25_score(&documents[0], &documents, &query, 3.0);
+        let long = bm25_score(&documents[1], &documents, &query, 3.0);
+
+        assert!(short > long);
     }
 }
