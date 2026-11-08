@@ -70,52 +70,58 @@ fn main() {
         }
     };
 
-    println!("Enter the search query: ");
-    let mut query = String::new();
+    loop {
+        println!("Enter the search query: ");
+        let mut query = String::new();
 
-    io::stdin()
-        .read_line(&mut query)
-        .expect("Failed to read query");
+        io::stdin()
+            .read_line(&mut query)
+            .expect("Failed to read query");
 
-    let query_words = count_words(&query);
+        if query.is_empty() {
+            break;
+        }
 
-    if query_words.is_empty() {
-        println!("Please enter a query containing at least one word...");
-        return;
-    }
+        let query_words = count_words(&query);
 
-    let documents = match load_documents(&directory_path, FILE_EXTENSION) {
-        Ok(documents) => documents,
-        Err(error) => {
-            eprintln!("Could not load documents: {error}");
+        if query_words.is_empty() {
+            println!("Please enter a query containing at least one word...");
             return;
         }
-    };
 
-    if documents.is_empty() {
-        println!("No {FILE_EXTENSION} document found. Exiting....");
-        return;
-    }
+        let documents = match load_documents(&directory_path, FILE_EXTENSION) {
+            Ok(documents) => documents,
+            Err(error) => {
+                eprintln!("Could not load documents: {error}");
+                return;
+            }
+        };
 
-    println!("Document count: {}", documents.len());
-
-    let total_words: usize = documents.iter().map(|document| document.word_count).sum();
-    let average_length = total_words as f64 / documents.len() as f64;
-    println!("Average document length: {average_length:.2}");
-    let mut results = Vec::new();
-    for document in &documents {
-        let score = bm25_score(document, &documents, &query_words, average_length);
-        if score > 0.0 {
-            results.push((document, score));
+        if documents.is_empty() {
+            println!("No {FILE_EXTENSION} document found. Exiting....");
+            return;
         }
-        results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
-    }
-    if results.is_empty() {
-        println!("No matching documents found.");
-        return;
-    }
-    for (document, score) in results {
-        println!("{},{score:.3}", document.name)
+
+        println!("Document count: {}", documents.len());
+
+        let total_words: usize = documents.iter().map(|document| document.word_count).sum();
+        let average_length = total_words as f64 / documents.len() as f64;
+        println!("Average document length: {average_length:.2}");
+        let mut results = Vec::new();
+        for document in &documents {
+            let score = bm25_score(document, &documents, &query_words, average_length);
+            if score > 0.0 {
+                results.push((document, score));
+            }
+            results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
+        }
+        if results.is_empty() {
+            println!("No matching documents found.");
+            return;
+        }
+        for (document, score) in results {
+            println!("{},{score:.3}", document.name)
+        }
     }
 }
 
