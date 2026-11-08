@@ -11,6 +11,76 @@ struct Document {
     word_count: usize,
 }
 
+fn main() {
+    let mut args = env::args().skip(1);
+    let directory_path = match (args.next(), args.next(), args.next()) {
+        (Some(flag), Some(path), None) if flag == "--document-directory" => path,
+        _ => {
+            eprintln!("Usage: word-frequency --document-directory <path>");
+            return;
+        }
+    };
+
+    let documents = match load_documents(&directory_path, FILE_EXTENSION) {
+        Ok(documents) => documents,
+        Err(error) => {
+            eprintln!("Could not load documents: {error}");
+            return;
+        }
+    };
+
+    if documents.is_empty() {
+        println!("No {FILE_EXTENSION} document found. Exiting....");
+        return;
+    }
+
+    println!("Document count: {}", documents.len());
+    let total_words: usize = documents.iter().map(|document| document.word_count).sum();
+    let average_length = total_words as f64 / documents.len() as f64;
+    println!("Average document length: {average_length:.2}");
+
+    loop {
+        println!("Enter the search query: ");
+        let mut query = String::new();
+
+        match io::stdin().read_line(&mut query) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("Could not read query :{error}");
+                break;
+            }
+        }
+
+        if query.trim().is_empty() {
+            break;
+        }
+
+        let query_words = count_words(&query);
+
+        if query_words.is_empty() {
+            println!("Please enter a query containing at least one word...");
+            return;
+        }
+
+        let mut results = Vec::new();
+        for document in &documents {
+            let score = bm25_score(document, &documents, &query_words, average_length);
+            if score > 0.0 {
+                results.push((document, score));
+            }
+        }
+        results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
+        if results.is_empty() {
+            println!("No matching documents found.");
+            return;
+        }
+        for (document, score) in results {
+            println!("{},{score:.3}", document.name)
+        }
+    }
+}
+
 fn load_document(path: &str) -> Result<Document, io::Error> {
     let contents = fs::read_to_string(path)?;
     let word_counts = count_words(&contents);
@@ -59,72 +129,6 @@ fn count_words(contents: &str) -> HashMap<String, usize> {
     }
     return counts;
 }
-
-fn main() {
-    let mut args = env::args().skip(1);
-    let directory_path = match (args.next(), args.next(), args.next()) {
-        (Some(flag), Some(path), None) if flag == "--document-directory" => path,
-        _ => {
-            eprintln!("Usage: word-frequency --document-directory <path>");
-            return;
-        }
-    };
-
-    loop {
-        println!("Enter the search query: ");
-        let mut query = String::new();
-
-        io::stdin()
-            .read_line(&mut query)
-            .expect("Failed to read query");
-
-        if query.is_empty() {
-            break;
-        }
-
-        let query_words = count_words(&query);
-
-        if query_words.is_empty() {
-            println!("Please enter a query containing at least one word...");
-            return;
-        }
-
-        let documents = match load_documents(&directory_path, FILE_EXTENSION) {
-            Ok(documents) => documents,
-            Err(error) => {
-                eprintln!("Could not load documents: {error}");
-                return;
-            }
-        };
-
-        if documents.is_empty() {
-            println!("No {FILE_EXTENSION} document found. Exiting....");
-            return;
-        }
-
-        println!("Document count: {}", documents.len());
-
-        let total_words: usize = documents.iter().map(|document| document.word_count).sum();
-        let average_length = total_words as f64 / documents.len() as f64;
-        println!("Average document length: {average_length:.2}");
-        let mut results = Vec::new();
-        for document in &documents {
-            let score = bm25_score(document, &documents, &query_words, average_length);
-            if score > 0.0 {
-                results.push((document, score));
-            }
-            results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
-        }
-        if results.is_empty() {
-            println!("No matching documents found.");
-            return;
-        }
-        for (document, score) in results {
-            println!("{},{score:.3}", document.name)
-        }
-    }
-}
-
 fn document_frequency(documents: &[Document], word: &str) -> usize {
     documents
         .iter()
